@@ -61,7 +61,7 @@ classdef StateMachine < handle
             sm.un = unit;
             sm.audio = AudioManager();
             sm.audio.add(fullfile(path, 'media', 'speed_up.wav'), 'speed_up');
-            max_nans = ceil(1/sm.w.ifi * 2); % max 2 sec delay
+            max_nans = ceil(1/sm.w.ifi * 5); % max 2 sec delay
             sm._nan_pool = nan(max_nans, 2);
             sm.keys = ArrowKeys();
         end
@@ -216,8 +216,6 @@ classdef StateMachine < handle
                         sm.ep_feedback.vis = true;
                         cur_theta = atan2(sm.cursor.y - sm.center.y, sm.cursor.x - sm.center.x);
                         if trial.is_manipulated
-                            %TODO: implement rotation
-                            %TODO: implement delay
                             % get angle of target in deg, add clamp offset, then to rad
                             target_angle = atan2d(sm.target.y - sm.center.y, sm.target.x - sm.center.x);
                             theta = cur_theta + deg2rad(trial.manipulation_angle);
@@ -258,7 +256,7 @@ classdef StateMachine < handle
         if sm.state == states.FEEDBACK
             if sm.entering()
             % Initialization code
-            sm.feedback_dur = tgt.block.feedback_duration + est_next_vbl; % feedback duration plus frame time, to set timer
+            sm.feedback_dur = tgt.block.feedback_duration + est_next_vbl; % feedback duration (200ms) plus frame time, to set timer
             sm.post_dur = sm.feedback_dur + tgt.block.extra_delay;
             jump_theta = theta + deg2rad(trial.jump_angle);
 		    disp(rad2deg(theta));
@@ -268,7 +266,7 @@ classdef StateMachine < handle
 		    sm.jump_feedback.y = sm.targ_dist_px * sin(jump_theta) + sm.center.y;
             end
 
-
+            % EP feedback duration (200ms), then EP feedback turns off
             if est_next_vbl >= sm.feedback_dur
                 if sm.too_slow
                 sm.ep_feedback.vis = false;
@@ -282,14 +280,14 @@ classdef StateMachine < handle
             end
         
 
-		% Display ep_feedback at jump_theta if trial.is_manipulated
-		if trial.is_manipulated && est_next_vbl >= (sm.feedback_dur + tgt.block.extra_delay)
+		% Display jump_feedback at jump_theta if trial.is_manipulated extra_delay time (1 second) after EP feedback dissapears 
+		if trial.is_manipulated && est_next_vbl >= (sm.feedback_dur + tgt.block.extra_delay) % jump feedback is visible 1 second after EP feedback is removed
 		    sm.ep_feedback.vis = false;
 		    sm.jump_feedback.vis = true;
 		end
 	    
-	    
-	    if est_next_vbl >= sm.post_dur + tgt.block.feedback_duration
+	    % Jump feedback duration is block duration (same as EP feedback duration - 200ms)
+	    if est_next_vbl >= sm.post_dur + tgt.block.feedback_duration %(200ms after Jump feedback is turned on)
 	        sm.jump_feedback.vis = false;
 		    sm.state = states.JUDGE;
 	    end
@@ -316,7 +314,7 @@ if sm.state == states.JUDGE
     % Log keyboard button press (only once per state)
     key_state = sm.keys.update();
     
-    if est_next_vbl - sm.judge_start_time <= 3
+    if est_next_vbl - sm.judge_start_time <= 2
         if key_state.Left || key_state.Right
             if key_state.Left
                 sm.feedback_text = 'left'; % Display "left" on the screen
@@ -335,6 +333,11 @@ if sm.state == states.JUDGE
             sm.logged_key_press = 'no response'; % Log 'no response'
             sm.display_time = est_next_vbl + 1; % Display 'too slow' for 1 second
             sm.reaction_time = est_next_vbl - sm.judge_start_time; % Calculate reaction time
+            sm.too_slow = 1;
+
+            % Increment the tooSlowCounter
+            sm.tooSlowCounter = sm.tooSlowCounter + 1;
+            fprintf('Too Slow Counter: %d\n', sm.tooSlowCounter);
         end
     end
     
