@@ -4,14 +4,6 @@ function tgt = make_tgt(id, group, sign, block_type, is_debug, is_short)
 exp_version = 'v1';
 desc = {
     exp_version
-    'clamp=+/- 7.5 during manip phase'
-    '5 targets (-60, -30, 0, 30, 60) (0 = top of screen)'
-    'two practice blocks. Veridical feedback & 0 deg clamp'
-    'for manipulation,'
-    'baseline 1: no feedback'
-    'baseline 2: 0 deg clamp, online feedback'
-    'clamp: clamp applied, online feedback'
-    'washout: no feedback'
 };
 
 disp('Generating tgt, this may take ~ 30 seconds...');
@@ -240,13 +232,11 @@ function ABS_MANIP_ANGLE = calculateManipAngle()
         random_number = rand();
         switch randi(4)
             case 1
-                ABS_MANIP_ANGLE = -1; % 12.5% chance for -1
+                ABS_MANIP_ANGLE = 0; % 50% chance for 0
             case 2
-                ABS_MANIP_ANGLE = 1; % 12.5% chance for +1
-            case 3
-                ABS_MANIP_ANGLE = -4; % 12.5% chance for -4
-            otherwise
-                ABS_MANIP_ANGLE = 4; % 12.5% chance for +4
+                ABS_MANIP_ANGLE = -4; % 25% chance for -4
+            case otherwise
+                ABS_MANIP_ANGLE = 4; % 25% chance for 4
         end
     end
 end
