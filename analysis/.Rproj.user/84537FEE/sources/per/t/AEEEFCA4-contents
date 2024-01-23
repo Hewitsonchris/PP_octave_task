@@ -2,309 +2,162 @@
 library(jsonlite)
 library(dplyr)
 library(purrr)
+library(tidyr)
+library(ggplot2)
 
-# clear console
-cat(rep("\n", 50))
 
-# Specify the zip file path
-zip_file_path <- "pp_data.zip"
+# Directory path where your json.gz files are located
+# List all json.gz files in the folder
+json_gz_files <- list.files( pattern = "\\.json\\.gz$", full.names = TRUE)
 
-# Unzip the file
-unzip(zip_file_path)
+# Initialize an empty list to store the data
+all_data <- list()
 
-# List all JSON files with names starting with "PP_"
-json_files <- list.files(pattern = "*.json$", full.names = TRUE)
-
-# Initialize an empty list to store the extracted data
-extracted_data_list <- list()
-
-# Initialize vectors to store subjects and categories
-category <- rep(c("VMR", "PC", "LAP"), length.out = length(json_files))  # Generate category vector
-
-# Iterate through each JSON file, load data, and add 'subjects' and 'category' variables
-subject <- 1:length(json_files)
-
-#total_trials in task
-tot_trial_num = 320
-
-# Initialize a vector to store the number of excluded trials for each subject
-excluded_trials <- integer()
-# Define subjects and associated random_good flags based on the specified JSON file names
-
-# Iterate through each JSON file and extract the specified fields
-for (i in seq_along(json_files)) {
-  # Extract the category from the file name
-  subname <- gsub("^PP_(VMR|PC|LAP)_\\d+\\.json$", "\\1", basename(json_files[i]))
-  
-  # Store the JSON data
-  extracted_data <- fromJSON(json_files[i])$rot
-  
-  # Extract the specified fields
-  extracted_data <- extracted_data %>%
-    select(
-      target_angle,
-      endpoint_raw_angle,
-      manip_angle,
-      jump_angle,
-      trial_number,
-      reaction_time,
-      reach_time,
-      correct_response,
-      response,
-      correct_flag,
-      response_time
-    )
-  # Calculate the number of excluded trials for this subject
-  num_trials <- nrow(extracted_data)
-  num_excluded <- tot_trial_num - num_trials
-  
-  # Check if num_excluded is negative and set it to zero if necessary
-  if (num_excluded < 0) {
-    num_excluded <- 0
-  }
-  
-  # Check for NA in 'response' and mark them as excluded
-  num_excluded <- num_excluded + sum(is.na(extracted_data$response))
-  
-  # Repeat subject and category vectors based on the length of the extracted data
-  extracted_data$subject <- rep(subject[i], num_trials)
-  extracted_data$category <- rep(category[i], num_trials)
-  extracted_data$excluded <- rep(num_excluded, num_trials)
-  
-  
-  # Store the number of excluded trials for this subject
-  excluded_trials <- c(excluded_trials, num_excluded)
-  
-  # Store the extracted data
-  extracted_data_list[[i]] <- extracted_data
+# Loop through each json.gz file and load its contents
+for (file in json_gz_files) {
+  # Read the data from the json.gz file
+  data <- fromJSON(gzfile(file))
+  # Store the data in the list
+  all_data[[file]] <- data
 }
 
-# Combine all extracted data into a single dataframe
-extracted_data <- do.call(rbind, extracted_data_list)
 
-### ALIGN TRIAL NUMS ###
-extracted_data <- extracted_data %>%
+
+# Initialize empty lists to store trials and target data
+trials_list <- list()
+targets_list <- list()
+
+# Iterate through each subject's list in 'all_data' and separate 'trials' and 'target' data
+for (i in seq_along(all_data)) {
+  subject_data <- all_data[[i]]
+  trials_list[[i]] <- subject_data$trials
+  targets_list[[i]] <- subject_data$target
+}
+
+# create combined_df
+combined_df <- bind_rows(Map(cbind, trials_list, targets_list))
+
+subject_sizes <- sapply(targets_list, function(x) dim(x)[1])
+# Creating subject column based on subject_sizes
+combined_df$subject <- rep(seq_along(subject_sizes), subject_sizes)
+# Initialize an empty vector to store trial numbers
+trial_numbers <- unlist(lapply(subject_sizes, function(size) seq_len(size)))
+
+# Add the trial column to combined_df
+combined_df$trial <- trial_numbers
+
+
+# Remove rows where 'correct_flag' is NA
+combined_df <- combined_df %>%
+  filter(!is.na(correct_flag))
+
+# Adjust trial numbers within each subject
+combined_df <- combined_df %>%
   group_by(subject) %>%
-  mutate(trial_number = seq_along(unique(trial_number)))
+  mutate(trial = row_number())
 
-### ENSURE ONLY TRIALS 1 -300 ###
-extracted_data <- extracted_data %>%
-  group_by(subject) %>%
-  filter(trial_number <= 300)
-
-# Create a new data frame with the desired column order
-extracted_data_reordered <- data.frame(
-  subject = extracted_data$subject,
-  category = extracted_data$category,
-  target_angle = extracted_data$target_angle,
-  trial_number = extracted_data$trial_number,
-  reaction_time = extracted_data$reaction_time,
-  reach_time = extracted_data$reach_time,
-  endpoint_hand_angle = extracted_data$endpoint_raw_angle,
-  manip_angle = extracted_data$manip_angle,
-  jump_angle = extracted_data$jump_angle,
-  correct_response = extracted_data$correct_response,
-  response = extracted_data$response,
-  response_time = extracted_data$response_time,
-  correct_flag = extracted_data$correct_flag,
-  excluded = extracted_data$excluded
-)
-
-
-# Assuming extracted_data is your dataframe
-extracted_data_reordered <- extracted_data_reordered %>%
-  mutate(response_time = ifelse(response_time < 150, response_time + 150, response_time)) %>%
-  mutate(response_time = ifelse(response_time > 1000, response_time * 0.8, response_time))
-
-# Assuming extracted_data_reordered is your dataframe
-extracted_data_reordered <- extracted_data_reordered %>%
-  mutate(
-    reach_time = ifelse(reach_time < 250, reach_time + 250, reach_time),
-    reaction_time = ifelse(reaction_time < 150, reaction_time + 200, reaction_time)
-  )
-
-
-
-# Generate new values for reach_time with mean 380 and sd 65
-mean_reach_time <- 380
-sd_reach_time <- 65
-extracted_data_reordered$reach_time <- rnorm(nrow(extracted_data_reordered), mean_reach_time, sd_reach_time)
-extracted_data_reordered$reach_time[extracted_data_reordered$reach_time < 200] <- runif(sum(extracted_data_reordered$reach_time < 200), 200, 445)
-
-# Generate new values for reaction_time with mean 320 and sd 90
-mean_reaction_time <- 470
-sd_reaction_time <- 90
-extracted_data_reordered$reaction_time <- rnorm(nrow(extracted_data_reordered), mean_reaction_time, sd_reaction_time)
-extracted_data_reordered$reaction_time[extracted_data_reordered$reaction_time < 200] <- runif(sum(extracted_data_reordered$reaction_time < 200), 200, 430)
-
-# Generate new values for response_time with mean 480 and sd 200
-mean_response_time <- 650
-sd_response_time <- 150
-extracted_data_reordered$response_time <- rnorm(nrow(extracted_data_reordered), mean_response_time, sd_response_time)
-extracted_data_reordered$response_time[extracted_data_reordered$response_time < 200] <- runif(sum(extracted_data_reordered$response_time < 200), 200, 880)
-
-
-
-# Assuming 'extracted_data_reordered' is your dataframe
-# First, create a category column with value 'VMR' for all rows
-extracted_data_reordered <- extracted_data_reordered %>%
-  mutate(category = 'VMR')
-
-# Get subjects with target_angle = 270
-subjects_to_change <- extracted_data_reordered %>%
-  filter(target_angle == 270) %>%
-  pull(subject) %>%
-  unique()
-
-# Randomly assign target_angle 250 or 290 to 50% of these subjects
-subjects_changed_250 <- sample(subjects_to_change, size = length(subjects_to_change) * 0.5)
-subjects_changed_290 <- subjects_to_change[!(subjects_to_change %in% subjects_changed_250)]
-
-# Update target_angle and endpoint_hand_angle for selected subjects
-extracted_data_reordered <- extracted_data_reordered %>%
-  mutate(
-    target_angle = ifelse(subject %in% subjects_changed_250, 250, target_angle),
-    target_angle = ifelse(subject %in% subjects_changed_290, 290, target_angle),
-    endpoint_hand_angle = case_when(
-      target_angle == 290 ~ endpoint_hand_angle + 20,
-      target_angle == 250 ~ endpoint_hand_angle - 20,
-      TRUE ~ endpoint_hand_angle
-    )
-  )
-
-# Replace target_angle values
-extracted_data_reordered$target_angle[extracted_data_reordered$target_angle == 225] <- 250
-extracted_data_reordered$target_angle[extracted_data_reordered$target_angle == 315] <- 290
+# Rename x, y, angle columns to target_x, target_y, target_angle
+combined_df <- combined_df %>%
+  rename(target_x = x, target_y = y, target_angle = angle)
 
 
 
 
-# Function to calculate the number of 'Left' and 'Right' responses needed
-calculate_responses <- function(mean, sd, total_responses) {
-  right_count <- rnorm(1, mean * total_responses, sd * sqrt(total_responses))
-  left_count <- total_responses - right_count
-  list(Left = left_count, Right = right_count)
-}
-
-# Assuming 'extracted_data_reordered' is your dataframe
-new_data <- extracted_data_reordered
-
-# Create empty columns for new_response and new_correct_flag
-new_data$new_response <- NA
-new_data$new_correct_flag <- NA
-
-
-# Define the desired mean and standard deviation for each condition
-# Define the desired mean and standard deviation for each condition
-conditions <- list(
-  list(extracted_data_reordered$target_angle < 0 & extracted_data_reordered$manip_angle == 4 & extracted_data_reordered$jump_angle == 1, mean = 0.83, sd = 0.04),
-  list(extracted_data_reordered$target_angle < 0 & extracted_data_reordered$manip_angle == 4 & extracted_data_reordered$jump_angle == -1, mean = 0.76, sd = 0.04),
-  list(extracted_data_reordered$target_angle < 0 & extracted_data_reordered$manip_angle == -4 & extracted_data_reordered$jump_angle == -1, mean = 0.85, sd = 0.04),
-  list(extracted_data_reordered$target_angle < 0 & extracted_data_reordered$manip_angle == -4 & extracted_data_reordered$jump_angle == 1, mean = 0.75, sd = 0.04),
-  list(extracted_data_reordered$target_angle > 0 & extracted_data_reordered$manip_angle == 4 & extracted_data_reordered$jump_angle == 1, mean = 0.87, sd = 0.04),
-  list(extracted_data_reordered$target_angle > 0 & extracted_data_reordered$manip_angle == 4 & extracted_data_reordered$jump_angle == -1, mean = 0.75, sd = 0.04),
-  list(extracted_data_reordered$target_angle > 0 & extracted_data_reordered$manip_angle == -4 & extracted_data_reordered$jump_angle == -1, mean = 0.84, sd = 0.04),
-  list(extracted_data_reordered$target_angle > 0 & extracted_data_reordered$manip_angle == -4 & extracted_data_reordered$jump_angle == 1, mean = 0.74, sd = 0.04),
-  list(extracted_data_reordered$target_angle > 0 & extracted_data_reordered$manip_angle == 0, mean = 0.58, sd = 0.04),
-  list(extracted_data_reordered$target_angle < 0 & extracted_data_reordered$manip_angle == 0, mean = 0.57, sd = 0.04)# Added condition for manip_angle = 0
-)
-
-for (cond in conditions) {
-  indices <- which(cond[[1]])
-  responses <- calculate_responses(cond$mean, cond$sd, length(indices))
-  
-  # Shuffle the responses within each condition's indices
-  shuffled_indices <- sample(indices)
-  shuffled_responses <- rep(c("Left", "Right"), c(responses$Left, responses$Right))
-  
-  # Update new_response and new_correct_flag using shuffled responses within the specific indices
-  extracted_data_reordered$response[shuffled_indices] <- shuffled_responses
-  extracted_data_reordered$response_flag[shuffled_indices] <- ifelse(shuffled_responses == "Right", "Correct", "Incorrect")
-}
-
-
-# Identify rows with NA values in new_response and new_correct_flag
-na_indices <- which(is.na(new_data$new_response) | is.na(new_data$new_correct_flag))
-
-# Replace NA values in new_response and new_correct_flag with corresponding values from response and correct_flag
-extracted_data_reordered$response[na_indices] <- new_data$response[na_indices]
-extracted_data_reordered$new_correct_flag[na_indices] <- new_data$correct_flag[na_indices]
-
-
+############ PER SUBJECT RESPONSE STATS ################################################
 # Calculate counts of correct and incorrect responses including subject numbers
-response_counts <- extracted_data_reordered %>%
-  group_by(subject, manip_angle, jump_angle, target_angle, response) %>%
+response_counts_per_sub <- combined_df %>%
+  group_by(subject, manipulation_angle, jump_angle, correct_flag) %>%
   summarize(count = n()) %>%
   ungroup()
 
 # Calculate the total count for each (subject, manip_angle, jump_angle, target_number) combination
-total_counts <- response_counts %>%
-  group_by(subject, manip_angle, jump_angle, target_angle) %>%
+total_counts_per_sub <- response_counts_per_sub %>%
+  group_by(subject, manipulation_angle, jump_angle) %>%
   summarize(total_count = sum(count))
 
 # Calculate the percentage of correct responses for each subject
-percentage_correct <- response_counts %>%
-  filter(response == 'Right') %>%
-  left_join(total_counts, by = c("subject", "manip_angle", "jump_angle", "target_angle")) %>%
+percentage_correct_per_sub <- response_counts_per_sub %>%
+  filter(correct_flag == 1) %>%
+  left_join(total_counts_per_sub, by = c("subject", "manipulation_angle", "jump_angle")) %>%
   mutate(percentage_correct = (count / total_count) * 100)
 
 
-library(ggplot2)
 
-# Plot grid of plots for all subjects
-ggplot(percentage_correct, aes(x = jump_angle, y = percentage_correct, color = factor(manip_angle))) +
-  geom_line() +
-  geom_errorbar(aes(ymin = percentage_correct - sd(percentage_correct), 
-                    ymax = percentage_correct + sd(percentage_correct)),
+# Assuming your data frame is named percentage_correct_per_sub
+
+summary_stats <- percentage_correct_per_sub %>%
+  group_by(manipulation_angle, jump_angle) %>%
+  summarise(mean_percentage = mean(percentage_correct, na.rm = TRUE),
+            sd_percentage = sd(percentage_correct, na.rm = TRUE))
+
+summary_stats$manipulation_angle <- unlist(summary_stats$manipulation_angle)
+summary_stats$jump_angle <- unlist(summary_stats$jump_angle)
+
+
+
+# Convert manipulation_angle to factor for color-coding
+summary_stats$manipulation_angle <- factor(summary_stats$manipulation_angle)
+
+
+
+
+# Plotting mean_percentage with sd_percentage as error bars, color-coded by manipulation_angle
+ggplot(summary_stats, aes(x = factor(jump_angle), y = mean_percentage, color = manipulation_angle)) +
+  geom_line(size = 1) +
+  geom_errorbar(aes(ymin = mean_percentage - sd_percentage, ymax = mean_percentage + sd_percentage),
                 width = 0.2, position = position_dodge(0.2)) +
-  labs(x = "Jump Angle", y = "Percentage Correct", color = "Manipulation Angle") +
-  facet_wrap(~ subject, ncol = 3) +  # Modify the number of columns in the grid as needed
-  theme_minimal()
+  labs(x = "Jump Angle", y = "Mean Percentage", color = "Manipulation Angle") +
+  theme_minimal() +
+  geom_line(aes(group = manipulation_angle), position = position_dodge(0.2), linetype = "solid")
 
-# Calculate counts of correct and incorrect responses
-response_counts <- new_data %>%
-  group_by(manip_angle, jump_angle, target_angle, new_correct_flag) %>%
-  summarize(count = n()) %>%
-  ungroup()
-
-# Calculate the total count for each (manip_angle, jump_angle, target_number) combination
-total_counts <- response_counts %>%
-  group_by(manip_angle, jump_angle, target_angle) %>%
-  summarize(total_count = sum(count))
-
-# Calculate the percentage of correct responses collapsing over subject
-percentage_correct <- response_counts %>%
-  filter(new_correct_flag == "Correct") %>%
-  left_join(total_counts, by = c("manip_angle", "jump_angle", "target_angle")) %>%
-  mutate(percentage_correct = (count / total_count) * 100)
-
-
-# Plot separate plots by target_number using facet_wrap
-ggplot(percentage_correct, aes(x = jump_angle, y = percentage_correct, color = factor(manip_angle))) +
-  geom_line() +
-  geom_errorbar(aes(ymin = percentage_correct - sd(percentage_correct), 
-                    ymax = percentage_correct + sd(percentage_correct)),
-                width = 0.2, position = position_dodge(0.2)) +
-  labs(x = "Jump Angle", y = "Percentage Correct", color = "manip_angle") +
-  facet_wrap(~target_angle, nrow = 2) +  # Modify the number of rows as needed
-  theme_minimal()
-
-ggplot(new_data) +
-  geom_histogram(aes(x = reaction_time), fill = "blue", alpha = 0.5) +
-  geom_histogram(aes(x = reach_time), fill = "red", alpha = 0.5) +
-  geom_histogram(aes(x = response_time), fill = "green", alpha = 0.5) +
-  labs(x = "Time", y = "Frequency") +
-  stat_summary(aes(x = mean(reaction_time), y = 50), fun = mean, geom = "text", 
-               label = "Reaction Time", color = "blue", vjust = -50) +
-  stat_summary(aes(x = mean(reach_time), y = 40), fun = mean, geom = "text", 
-               label = "Reach Time", color = "red", vjust = -68) +
-  stat_summary(aes(x = mean(response_time), y = 30), fun = mean, geom = "text", 
-               label = "Response Time", color = "green", vjust = -30) +
-  theme_minimal()
-
-
+# Selecting required columns and arranging them in the specified order
+PP_data <- combined_df %>%
+  select(subject, trial, manipulation_angle, jump_angle, response_time, response,
+         correct_response, correct_flag, target_angle, rt, mt, ep_reach_angle, diff_angle)
 
 
 # Save the extracted_data as a CSV file
-write.csv(pp_data, file = "pp_data.csv", row.names = FALSE)
+#write.csv(pp_data, file = "pp_data.csv", row.names = FALSE)
+
+
+
+
+# ############ Group RESPONSE STATS ################################################
+# # Calculate counts of correct and incorrect responses
+# response_counts <- combined_df %>%
+#   group_by(manipulation_angle, jump_angle, correct_flag) %>%
+#   summarize(count = n()) %>%
+#   ungroup()
+# 
+# # Calculate the total count for each (manip_angle, jump_angle, target_number) combination
+# total_counts <- response_counts %>%
+#   group_by(manipulation_angle, jump_angle) %>%
+#   summarize(total_count = sum(count))
+# 
+# # Calculate the percentage of correct responses collapsing over subject
+# percentage_correct <- response_counts %>%
+#   filter(correct_flag == 1) %>%
+#   left_join(total_counts, by = c("manipulation_angle", "jump_angle")) %>%
+#   mutate(percentage_correct = (count / total_count) * 100)
+# 
+# 
+# percentage_correct$manipulation_angle <- as.numeric(percentage_correct$manipulation_angle)
+# percentage_correct$jump_angle <- as.numeric(percentage_correct$jump_angle)
+# percentage_correct$correct_flag <- as.numeric(percentage_correct$correct_flag)
+# percentage_correct$count <- as.numeric(percentage_correct$count)
+# percentage_correct$total_count <- as.numeric(percentage_correct$total_count)
+# percentage_correct$percentage_correct <- as.numeric(percentage_correct$percentage_correct)
+# 
+# 
+# ggplot(percentage_correct, aes(x = factor(jump_angle), y = percentage_correct, 
+#                                color = factor(manipulation_angle))) +
+#   geom_line(aes(group = interaction(manipulation_angle)), position = "dodge") +
+#   geom_errorbar(aes(ymin = percentage_correct - sd(percentage_correct), 
+#                     ymax = percentage_correct + sd(percentage_correct)),
+#                 width = 0.2, position = position_dodge(0.2)) +
+#   labs(x = "Jump Angle", y = "Percentage Correct", color = "Manipulation Angle") +
+#   theme_minimal()
+
+
+
 

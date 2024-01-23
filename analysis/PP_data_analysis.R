@@ -35,7 +35,7 @@ for (i in seq_along(all_data)) {
 }
 
 # create combined_df
-combined_df <- bind_rows(Map(cbind, trials_list, target_list))
+combined_df <- bind_rows(Map(cbind, trials_list, targets_list))
 
 subject_sizes <- sapply(targets_list, function(x) dim(x)[1])
 # Creating subject column based on subject_sizes
@@ -110,46 +110,6 @@ ggplot(summary_stats, aes(x = factor(jump_angle), y = mean_percentage, color = m
   theme_minimal() +
   geom_line(aes(group = manipulation_angle), position = position_dodge(0.2), linetype = "solid")
 
-
-
-
-############ Group RESPONSE STATS ################################################
-# Calculate counts of correct and incorrect responses
-response_counts <- combined_df %>%
-  group_by(manipulation_angle, jump_angle, correct_flag) %>%
-  summarize(count = n()) %>%
-  ungroup()
-
-# Calculate the total count for each (manip_angle, jump_angle, target_number) combination
-total_counts <- response_counts %>%
-  group_by(manipulation_angle, jump_angle) %>%
-  summarize(total_count = sum(count))
-
-# Calculate the percentage of correct responses collapsing over subject
-percentage_correct <- response_counts %>%
-  filter(correct_flag == 1) %>%
-  left_join(total_counts, by = c("manipulation_angle", "jump_angle")) %>%
-  mutate(percentage_correct = (count / total_count) * 100)
-
-
-percentage_correct$manipulation_angle <- as.numeric(percentage_correct$manipulation_angle)
-percentage_correct$jump_angle <- as.numeric(percentage_correct$jump_angle)
-percentage_correct$correct_flag <- as.numeric(percentage_correct$correct_flag)
-percentage_correct$count <- as.numeric(percentage_correct$count)
-percentage_correct$total_count <- as.numeric(percentage_correct$total_count)
-percentage_correct$percentage_correct <- as.numeric(percentage_correct$percentage_correct)
-
-
-ggplot(percentage_correct, aes(x = factor(jump_angle), y = percentage_correct, 
-                               color = factor(manipulation_angle))) +
-  geom_line(aes(group = interaction(manipulation_angle)), position = "dodge") +
-  geom_errorbar(aes(ymin = percentage_correct - sd(percentage_correct), 
-                    ymax = percentage_correct + sd(percentage_correct)),
-                width = 0.2, position = position_dodge(0.2)) +
-  labs(x = "Jump Angle", y = "Percentage Correct", color = "Manipulation Angle") +
-  theme_minimal()
-
-
 # Selecting required columns and arranging them in the specified order
 PP_data <- combined_df %>%
   select(subject, trial, manipulation_angle, jump_angle, response_time, response,
@@ -157,5 +117,47 @@ PP_data <- combined_df %>%
 
 
 # Save the extracted_data as a CSV file
-write.csv(pp_data, file = "pp_data.csv", row.names = FALSE)
+#write.csv(pp_data, file = "pp_data.csv", row.names = FALSE)
+
+
+
+
+# ############ Group RESPONSE STATS ################################################
+# # Calculate counts of correct and incorrect responses
+# response_counts <- combined_df %>%
+#   group_by(manipulation_angle, jump_angle, correct_flag) %>%
+#   summarize(count = n()) %>%
+#   ungroup()
+# 
+# # Calculate the total count for each (manip_angle, jump_angle, target_number) combination
+# total_counts <- response_counts %>%
+#   group_by(manipulation_angle, jump_angle) %>%
+#   summarize(total_count = sum(count))
+# 
+# # Calculate the percentage of correct responses collapsing over subject
+# percentage_correct <- response_counts %>%
+#   filter(correct_flag == 1) %>%
+#   left_join(total_counts, by = c("manipulation_angle", "jump_angle")) %>%
+#   mutate(percentage_correct = (count / total_count) * 100)
+# 
+# 
+# percentage_correct$manipulation_angle <- as.numeric(percentage_correct$manipulation_angle)
+# percentage_correct$jump_angle <- as.numeric(percentage_correct$jump_angle)
+# percentage_correct$correct_flag <- as.numeric(percentage_correct$correct_flag)
+# percentage_correct$count <- as.numeric(percentage_correct$count)
+# percentage_correct$total_count <- as.numeric(percentage_correct$total_count)
+# percentage_correct$percentage_correct <- as.numeric(percentage_correct$percentage_correct)
+# 
+# 
+# ggplot(percentage_correct, aes(x = factor(jump_angle), y = percentage_correct, 
+#                                color = factor(manipulation_angle))) +
+#   geom_line(aes(group = interaction(manipulation_angle)), position = "dodge") +
+#   geom_errorbar(aes(ymin = percentage_correct - sd(percentage_correct), 
+#                     ymax = percentage_correct + sd(percentage_correct)),
+#                 width = 0.2, position = position_dodge(0.2)) +
+#   labs(x = "Jump Angle", y = "Percentage Correct", color = "Manipulation Angle") +
+#   theme_minimal()
+
+
+
 
