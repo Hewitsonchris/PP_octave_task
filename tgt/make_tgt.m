@@ -230,11 +230,9 @@ function ABS_MANIP_ANGLE = calculateManipAngle()
         ABS_MANIP_ANGLE = 0; % 50% chance for 0
     else
         random_number = rand();
-        switch randi(4)
+        switch randi(2)
             case 1
-                ABS_MANIP_ANGLE = 0; % 50% chance for 0
-            case 2
-                ABS_MANIP_ANGLE = -4; % 25% chance for -4
+                ABS_MANIP_ANGLE = -4; % 50% chance for -4
             case otherwise
                 ABS_MANIP_ANGLE = 4; % 25% chance for 4
         end
